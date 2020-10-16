@@ -1,0 +1,102 @@
+import pandas as pd
+from splinter import Browser
+from time import sleep
+from pprint import pprint
+from bs4 import BeautifulSoup
+import requests
+import pymongo
+import time
+
+news_url = 'https://mars.nasa.gov/news/?page=0&per_page=40&order=publish_date+desc%2Ccreated_at+desc&search=&category=19%2C165%2C184%2C204&blank_scope=Latest'
+jpl_url = 'https://www.jpl.nasa.gov/spaceimages/?search=&category=Mars'
+jpl_base = 'https://www.jpl.nasa.gov'
+hemi_url = 'https://astrogeology.usgs.gov/search/results?q=hemisphere+enhanced&k1=target&v1=Mars'
+facts_url = 'https://space-facts.com/mars/'
+
+
+def init_browser():
+
+    executable_path = {"executable_path": "/usr/local/bin/chromedriver"}
+    return Browser("chrome", **executable_path, headless=False)
+    
+def scrape():
+    mars_data = {}
+    browser = init_browser()
+    browser.visit(news_url)
+    html = browser.html
+    news_data = BeautifulSoup(html, "html.parser")
+    #strip headline
+    news_headline = news_data.find_all('div', class_='content_title')[1].text
+    #strip body
+    news_desc = news_data.find_all('div', class_='article_teaser_body')[0].text
+    
+    mars_data.update( {
+        'news_headline': news_headline,
+        'news_description': news_desc
+    })
+
+    # JPL Featureed Space Image
+    sleep(1)
+    browser.visit(jpl_url)
+    html = browser.html
+    JPL_image = BeautifulSoup(html, "html.parser")
+
+    featured_image = JPL_image.find(class_='carousel_item')['style']
+    image_urlend = featured_image.split("'")[1]
+    image_url = jpl_base + image_urlend
+    mars_data.update( {
+        "featured_img": image_url
+    })
+
+    # Mars Facts tables
+    sleep(1)
+    Facts_Tables = pd.read_html(facts_url)
+    tables_df = Facts_Tables[0]
+    tables_df.columns = ['Item', 'Values']
+    tables_df.set_index('Item', inplace=True)
+    html_table = tables_df.to_html(
+        classes='table table-striped table-hover')
+
+    mars_data.update({
+        "html_table": html_table
+    })
+
+    browser.visit(hemi_url)
+
+    # Hemisphere images
+
+    sleep(1)
+    browser.visit(hemi_url)
+
+    html = browser.html
+    hemi_image = BeautifulSoup(html, "html.parser")
+    hemi_urls = hemi_image.find_all('div', class_='item')
+    links = hemi_image.find_all('div', class_='item')
+    hemi_photos_urls = []
+    
+    for x in links:
+        link_base = "https://astrogeology.usgs.gov"
+
+        img_link = x.find("div", class_="description").a["href"]
+        title = x.find('h3').text
+
+        hemilink = link_base + img_link
+
+        browser.visit(hemilink)
+        hemi_html = browser.html
+        hemi_soup = BeautifulSoup(hemi_html, 'html.parser')
+
+        img_url = hemi_soup.find("img", class_="wide-image")["src"]
+
+        hemi_photos_urls.append(
+            {'title': title, 'url': 'https://astrogeology.usgs.gov' + img_url})
+
+    mars_data.update({
+        "hemishere_urls": hemi_photos_urls
+        })
+    
+    browser.quit()
+
+    print(mars_data)
+
+    return mars_data
